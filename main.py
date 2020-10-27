@@ -1,6 +1,4 @@
-import asyncio
-import base64
-import time,signal
+import signal
 from concurrent.futures.thread import ThreadPoolExecutor
 
 from pytun import TunTapDevice
@@ -43,15 +41,19 @@ class MyCog(commands.Cog):
 
     @tasks.loop(seconds=1)
     async def printer(self):
-        packet = await bot.loop.run_in_executor(threadpool, (lambda : tun.read(tun.mtu+4)))
-        encoded = base64.b85encode(packet).decode('utf-8')
+        if not self.chan:
+            return
+        packet = await bot.loop.run_in_executor(threadpool, (lambda : tun.read(tun.mtu+16)))
+        converted = ''.join([chr(i + int('0x2800',16)) for i in packet])
+        encoded = converted.encode('utf-8').decode('utf-8')
         await self.chan.send(content=encoded)
 
     @commands.Cog.listener()
     async def on_message(self,message):
         if message.author == self.bot.user:
             return
-        decoded_bytes = base64.b85decode(message.content.encode('utf-8'))
+        decoded_bytes = message.content
+        decoded_bytes = bytes([ord(i)-int('0x2800',16) for i in decoded_bytes])
         tun.write(decoded_bytes)
 
 
