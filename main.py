@@ -17,7 +17,7 @@ tun = TunTapDevice(name='discip')
 tun.addr = os.environ['SRC_IP']
 tun.dstaddr = os.environ['DST_IP']
 tun.netmask = '255.255.255.0'
-tun.mtu = 1450
+tun.mtu = 1990
 tun.persist(True)
 tun.up()
 
@@ -44,23 +44,15 @@ class MyCog(commands.Cog):
     @tasks.loop(seconds=1)
     async def printer(self):
         packet = await bot.loop.run_in_executor(threadpool, (lambda : tun.read(tun.mtu+4)))
-        encoded = base64.b85encode(packet).decode('ascii')
-        encoded = str(len(packet)) + " " + encoded
+        encoded = base64.b85encode(packet).decode('utf-8')
         await self.chan.send(content=encoded)
 
     @commands.Cog.listener()
     async def on_message(self,message):
         if message.author == self.bot.user:
             return
-        split = message.content.split()
-        expected_length = int(split[0])
-        message_bytes = split[1].encode('ascii')
-        decoded_bytes = base64.b85decode(message_bytes)
-        written = tun.write(decoded_bytes)
-        print ('{} : {} : {}'.format(expected_length,len(decoded_bytes),written))
-        if expected_length != len(decoded_bytes):
-            print("Something went demonstrably wrong.")
-
+        decoded_bytes = base64.b85decode(message.content.encode('utf-8'))
+        tun.write(decoded_bytes)
 
 
     @commands.Cog.listener()
