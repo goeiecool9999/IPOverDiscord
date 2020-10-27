@@ -68,7 +68,7 @@ class MyCog(commands.Cog):
             return
         while True:
             packet = await bot.loop.run_in_executor(threadpool, (lambda: tun.read(tun.mtu + 16)))
-            converted = ''.join([chr(i + int('0x2800', 16)) for i in packet])
+            converted = ''.join([chr(i + int('0x1f300', 16)) for i in packet])
             await self.send_buffer.queue_packet(converted)
 
     @commands.Cog.listener()
@@ -78,7 +78,7 @@ class MyCog(commands.Cog):
         packets = message.content.split()
         for packet in packets:
             decoded_bytes = packet
-            decoded_bytes = bytes([ord(i) - int('0x2800', 16) for i in decoded_bytes])
+            decoded_bytes = bytes([ord(i) - int('0x1f300', 16) for i in decoded_bytes])
             tun.write(decoded_bytes)
 
     @commands.Cog.listener()
