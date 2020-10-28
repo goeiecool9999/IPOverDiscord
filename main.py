@@ -52,6 +52,7 @@ class MyCog(commands.Cog):
             message += packet + " "
         message = message[:-1]
         await self.ownMessage.edit(content=message)
+        await buffer.signal_free()
 
     def cog_unload(self):
         self.printer.cancel()
