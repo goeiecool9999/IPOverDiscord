@@ -60,8 +60,10 @@ class MyCog(commands.Cog):
 
     @tasks.loop(seconds=1)
     async def autoflusher(self):
-        if len(self.send_buffer.packets):
+        if self.send_buffer.totalSize:
             print("autoflushing")
+        else:
+            print("not flushing, ", self.send_buffer.totalSize)
         await self.send_buffer.flush_packets()
 
     @tasks.loop(seconds=1)
