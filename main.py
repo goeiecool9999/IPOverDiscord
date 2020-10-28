@@ -10,7 +10,6 @@ import os
 
 import logging
 
-from buffer import Buffer
 from modem import Modem
 
 logging.basicConfig(level=logging.INFO)
@@ -42,44 +41,22 @@ class MyCog(commands.Cog):
         self.chan = None
         self.bot = bot
         self.modem = Modem()
+        self.modem_available_event = Event()
+        self.modem_available_event.set()
         self.vcclient = None
-        self.send_buffer = Buffer(tun.mtu)
-        self.send_buffer.flush_action((lambda buffer: self.transmit_bulk_packets(buffer)))
-
-    async def transmit_bulk_packets(self, buffer):
-        if not len(buffer.packets):
-            return
-        message = ''
-        for packet in buffer.packets:
-            message += packet + " "
-        message = message[:-1]
-
-        if not self.vcclient.is_playing():
-            self.vcclient.play(self.modem)
-
-
-        await buffer.signal_free()
 
     def cog_unload(self):
         self.printer.cancel()
-        self.autoflusher.cancel()
-
-    @tasks.loop(seconds=1)
-    async def autoflusher(self):
-        if self.send_buffer.totalSize:
-            print("autoflushing")
-        else:
-            print("not flushing, ", self.send_buffer.totalSize)
-        await self.send_buffer.flush_packets()
 
     async def printer(self):
-        if not self.chan:
-            return
         print("sending has started")
         while True:
             packet = await bot.loop.run_in_executor(threadpool, (lambda: tun.read(tun.mtu + 16)))
-            converted = ''.join([chr(i + int('0x2800', 16)) for i in packet])
-            await self.send_buffer.queue_packet(converted)
+            packet = "this is a test".encode('ascii')
+            await self.modem_available_event.wait()
+            self.modem_available_event.clear()
+            self.modem.set_bytes_to_play(packet)
+            self.vcclient.play(self.modem, after=lambda x: self.modem_available_event.set())
 
     @commands.Cog.listener()
     async def on_ready(self):
@@ -91,11 +68,11 @@ class MyCog(commands.Cog):
         if not self.chan:
             bot.remove_cog('MyCog')
 
-        self.autoflusher.start()
-        self.bot.loop.create_task(self.printer())
         self.vcclient = await self.chan.connect()
         if not self.vcclient:
             bot.remove_cog('MyCog')
+
+        self.bot.loop.create_task(self.printer())
 
 
 bot.add_cog(MyCog(bot))
