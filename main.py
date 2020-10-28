@@ -74,12 +74,13 @@ class MyCog(commands.Cog):
             await self.send_buffer.queue_packet(converted)
 
     @commands.Cog.listener()
-    async def on_message_edit(self, before, after):
-        print("message edit")
-        message = after
-        if message.author == self.bot.user:
+    async def on_raw_message_edit(self, payload):
+        if payload.message_id != self.recvMessage.id:
             return
-        packets = message.content.split()
+        message = payload.data
+        if message['author'] == self.bot.user:
+            return
+        packets = message['content'].split()
         print("received {} packets.".format(len(packets)))
         for packet in packets:
             decoded_bytes = packet
