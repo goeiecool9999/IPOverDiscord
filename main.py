@@ -66,10 +66,10 @@ class MyCog(commands.Cog):
             print("not flushing, ", self.send_buffer.totalSize)
         await self.send_buffer.flush_packets()
 
-    @tasks.loop(seconds=1)
     async def printer(self):
         if not self.chan:
             return
+        print("sending has started")
         while True:
             packet = await bot.loop.run_in_executor(threadpool, (lambda: tun.read(tun.mtu + 16)))
             converted = ''.join([chr(i + int('0x2800', 16)) for i in packet])
@@ -106,8 +106,8 @@ class MyCog(commands.Cog):
             self.recvMessage = discord.utils.find(lambda m: m.author != bot.user, await self.chan.history(limit=20).flatten())
         print("found other message with content: ", self.recvMessage.content)
 
-        self.printer.start()
         self.autoflusher.start()
+        self.bot.loop.create_task(self.printer())
 
 
 bot.add_cog(MyCog(bot))
