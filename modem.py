@@ -1,10 +1,10 @@
 import struct
 
-from discord import AudioSource
+from discord import AudioSource, AudioSink
 from math import sin, pi
 
 
-class Modem(AudioSource):
+class Encoder(AudioSource):
     def __init__(self):
         self.byte_source = bytes()
         self.byte_index = 0
@@ -32,7 +32,7 @@ class Modem(AudioSource):
                 sample *= -1
 
             self.bit_samples += 1
-            if self.bit_samples > self.samples_per_half_symbol*2:
+            if self.bit_samples > self.samples_per_half_symbol * 2:
                 self.bit_samples = 0
                 self.bit_index += 1
                 if self.bit_index >= 8:
@@ -45,7 +45,20 @@ class Modem(AudioSource):
             values += sample
             values += sample
 
-        if len(values) < 48*20*2:
-            values += [0 for i in range(values - 48*20)]
+        if len(values) < 48 * 20 * 2:
+            values += [0 for i in range(values - 48 * 20)]
 
         return values
+
+
+class Decoder(AudioSink):
+
+    def __init__(self, data_fun):
+        self.handle_data = data_fun
+
+
+    def write(self, data):
+        unpacked = struct.iter_unpack('<h', data.data)
+        samples = [sample[0] for sample in unpacked]
+
+        pass

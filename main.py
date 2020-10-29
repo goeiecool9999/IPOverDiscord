@@ -10,7 +10,7 @@ import os
 
 import logging
 
-from modem import Modem
+from modem import Encoder, Decoder
 
 logging.basicConfig(level=logging.INFO)
 
@@ -31,6 +31,10 @@ signal.signal(signal.SIGINT, terminate)
 
 threadpool = ThreadPoolExecutor(2)
 
+import ctypes.util
+discord.opus.load_opus(ctypes.util.find_library('opus'))
+discord.opus.is_loaded()
+
 TOKEN = os.environ["DISCORD_TOKEN"]
 
 bot = discord.ext.commands.Bot('!')
@@ -40,23 +44,27 @@ class MyCog(commands.Cog):
     def __init__(self, bot):
         self.chan = None
         self.bot = bot
-        self.modem = Modem()
-        self.modem_available_event = Event()
-        self.modem_available_event.set()
+        self.encoder = Encoder()
+        self.encoder_available_event = Event()
+        self.encoder_available_event.set()
+        self.decoder = Decoder(lambda packet: self.handle_packet(packet))
         self.vcclient = None
 
     def cog_unload(self):
         self.printer.cancel()
+
+    def handle_packet(self,packet):
+        tun.write(packet)
 
     async def printer(self):
         print("sending has started")
         while True:
             packet = await bot.loop.run_in_executor(threadpool, (lambda: tun.read(tun.mtu + 16)))
             packet = "this is a test".encode('ascii')
-            await self.modem_available_event.wait()
-            self.modem_available_event.clear()
-            self.modem.set_bytes_to_play(packet)
-            self.vcclient.play(self.modem, after=lambda x: self.modem_available_event.set())
+            await self.encoder_available_event.wait()
+            self.encoder_available_event.clear()
+            self.encoder.set_bytes_to_play(packet)
+            self.vcclient.play(self.encoder, after=lambda x: self.encoder_available_event.set())
 
     @commands.Cog.listener()
     async def on_ready(self):
@@ -72,6 +80,7 @@ class MyCog(commands.Cog):
         if not self.vcclient:
             bot.remove_cog('MyCog')
 
+        self.vcclient.listen(self.decoder)
         self.bot.loop.create_task(self.printer())
 
 
