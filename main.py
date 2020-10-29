@@ -61,7 +61,7 @@ class MyCog(commands.Cog):
         print("sending has started")
         while True:
             packet = await bot.loop.run_in_executor(threadpool, (lambda: tun.read(tun.mtu + 16)))
-            packet = "\x00\x00\x00\x00\x00\x00\x00this is a test".encode('ascii')
+            packet = "this is a test".encode('ascii')
             # packet = bytes([85,85,85,85,85,85,85,85,85,85,85,85,85,85,0,0,0,0,0,0,0,0,0,0])
             await self.encoder.emitted_event.wait()
             self.encoder.set_bytes_to_play(packet)

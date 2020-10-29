@@ -6,6 +6,8 @@ from math import sin, pi
 
 samples_per_half_symbol = 200
 
+samples_per_ifg = 50
+
 
 class Encoder(AudioSource):
     def __init__(self):
@@ -13,12 +15,13 @@ class Encoder(AudioSource):
         self.byte_index = 0
         self.bit_index = 0
         self.bit_samples = 0
+        self.ifg_samples = 0
         self.emitted_event = Event()
         self.emitted_event.set()
         pass
 
-    def set_bytes_to_play(self, bytes):
-        self.byte_source = bytes
+    def set_bytes_to_play(self, in_bytes):
+        self.byte_source = bytes([0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xab]) + in_bytes
         self.byte_index = 0
         self.bit_index = 0
         self.emitted_event.clear()
@@ -29,30 +32,34 @@ class Encoder(AudioSource):
     def read(self):
         values = bytes()
         for i in range(48 * 20):
+            #run out of bytes
             if self.byte_index >= len(self.byte_source):
+                if not self.emitted_event.is_set():
+                    self.ifg_samples = samples_per_ifg
                 self.emitted_event.set()
-                break
-            sample = 3000
-            if self.byte_source[self.byte_index] & (1 << self.bit_index):
-                sample *= -1
 
-            if self.bit_samples >= samples_per_half_symbol:
-                sample *= -1
+            sample = 0
 
-            self.bit_samples += 1
-            if self.bit_samples > samples_per_half_symbol * 2:
-                self.bit_samples = 0
-                self.bit_index += 1
-                if self.bit_index >= 8:
-                    self.byte_index += 1
-                    self.bit_index = 0
+            if self.ifg_samples:
+                self.ifg_samples -= 1
+            elif not self.emitted_event.is_set():
+                sample = 3000
+                if self.byte_source[self.byte_index] & (1 << self.bit_index):
+                    sample *= -1
+
+                if self.bit_samples >= samples_per_half_symbol:
+                    sample *= -1
+
+                self.bit_samples += 1
+                if self.bit_samples > samples_per_half_symbol * 2:
+                    self.bit_samples = 0
+                    self.bit_index += 1
+                    if self.bit_index >= 8:
+                        self.byte_index += 1
+                        self.bit_index = 0
+
 
             sample = struct.pack('<h', sample)
-            values += sample
-            values += sample
-
-        for i in range(48 * 20 * 2 - len(values)//2):
-            sample = struct.pack('<h', 0)
             values += sample
             values += sample
 
