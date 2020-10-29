@@ -4,12 +4,12 @@ from discord import AudioSource, AudioSink
 
 samples_per_half_symbol = 15
 
-samples_per_ifg = 40
+samples_per_ifg = samples_per_half_symbol*16
 
 
 class Encoder(AudioSource):
     def __init__(self):
-        self.packet_buffer = queue.Queue(maxsize=10)
+        self.packet_buffer = queue.Queue(maxsize=1)
         self.byte_source = bytes()
         self.byte_index = 0
         self.bit_index = 0
@@ -18,7 +18,7 @@ class Encoder(AudioSource):
         self.ifg_samples = 0
         pass
 
-    async def set_bytes_to_play(self, in_bytes):
+    def set_bytes_to_play(self, in_bytes):
         self.packet_buffer.put(bytes([0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0xd5]) + in_bytes)
 
     def is_opus(self):
@@ -29,6 +29,7 @@ class Encoder(AudioSource):
         for i in range(48 * 20):
             if not self.packet_buffer.empty() and not self.bytes_available:
                 self.byte_source = self.packet_buffer.get(block=False)
+                print("??????????????????")
                 self.byte_index = 0
                 self.bit_index = 0
                 self.bytes_available = True
@@ -36,6 +37,7 @@ class Encoder(AudioSource):
             # run out of bytes
             if self.byte_index >= len(self.byte_source):
                 if self.bytes_available:
+                    print("!!!!!!!!!!!!!!!!!!!!!")
                     self.ifg_samples = samples_per_ifg
                 self.bytes_available = False
 
@@ -136,11 +138,11 @@ class Decoder(AudioSink):
         for sample in samples[::2]:
             self.samples_last_symbol += 1
 
-            if self.preamble_done and self.samples_last_symbol > samples_per_ifg:
+            if self.preamble_done and self.samples_last_symbol > samples_per_half_symbol*8:
                 self.handle_data(bytes(self.current_packet))
                 self.reset()
 
-            if abs(sample) < 100:
+            if abs(sample) < 300:
                 continue
             if self.samples_last_symbol < 10:
                 continue
@@ -155,6 +157,11 @@ class Decoder(AudioSink):
 
             if self.high != self.previous_high:
                 self.push_bit(1 if self.high else 0)
+
+                if self.samples_last_symbol >= samples_per_half_symbol*2*2:
+                    self.handle_data(bytes(self.current_packet))
+                    self.reset()
+
                 self.samples_last_symbol = 0
                 self.finding_sym = False
 

@@ -61,7 +61,7 @@ class MyCog(commands.Cog):
         print("sending has started")
         while True:
             packet = await bot.loop.run_in_executor(threadpool, (lambda: tun.read(tun.mtu + 16)))
-            await self.encoder.set_bytes_to_play(packet)
+            packet = await bot.loop.run_in_executor(threadpool, (lambda: self.encoder.set_bytes_to_play(packet)))
 
     @commands.Cog.listener()
     async def on_ready(self):
@@ -85,7 +85,7 @@ class MyCog(commands.Cog):
         await self.vcclient.disconnect()
         self.vcclient = await self.chan.connect()
 
-        self.vcclient.listen(self.decoder)
+        self.vcclient.listen(discord.UserFilter(self.decoder, user=self.other_bot))
         # self.vcclient.listen(discord.UserFilter(discord.WaveSink('test.wav'), user=self.other_bot))
         self.vcclient.play(self.encoder)
         self.bot.loop.create_task(self.printer())
