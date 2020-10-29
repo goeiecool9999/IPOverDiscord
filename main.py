@@ -19,7 +19,7 @@ tun = TunTapDevice(name='discip')
 tun.addr = os.environ['SRC_IP']
 tun.dstaddr = os.environ['DST_IP']
 tun.netmask = '255.255.255.0'
-tun.mtu = 1990
+tun.mtu = 1600
 tun.persist(True)
 tun.up()
 
@@ -54,7 +54,6 @@ class MyCog(commands.Cog):
         self.printer.cancel()
 
     def handle_packet(self,packet):
-        print(packet)
         if len(packet) >= 4:
             tun.write(packet)
 
@@ -62,10 +61,7 @@ class MyCog(commands.Cog):
         print("sending has started")
         while True:
             packet = await bot.loop.run_in_executor(threadpool, (lambda: tun.read(tun.mtu + 16)))
-            # packet = "this is a test".encode('ascii')
-            # packet = bytes([85,85,85,85,85,85,85,85,85,85,85,85,85,85,0,0,0,0,0,0,0,0,0,0])
-            await self.encoder.emitted_event.wait()
-            self.encoder.set_bytes_to_play(packet)
+            await self.encoder.set_bytes_to_play(packet)
 
     @commands.Cog.listener()
     async def on_ready(self):

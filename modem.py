@@ -1,30 +1,25 @@
+import queue
 import struct
-from asyncio import Event
-
 from discord import AudioSource, AudioSink
-from math import sin, pi
 
-samples_per_half_symbol = 11
+samples_per_half_symbol = 15
 
-samples_per_ifg = 20
+samples_per_ifg = 40
 
 
 class Encoder(AudioSource):
     def __init__(self):
+        self.packet_buffer = queue.Queue(maxsize=10)
         self.byte_source = bytes()
         self.byte_index = 0
         self.bit_index = 0
+        self.bytes_available = False
         self.bit_samples = 0
         self.ifg_samples = 0
-        self.emitted_event = Event()
-        self.emitted_event.set()
         pass
 
-    def set_bytes_to_play(self, in_bytes):
-        self.byte_source = bytes([0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0xd5]) + in_bytes
-        self.byte_index = 0
-        self.bit_index = 0
-        self.emitted_event.clear()
+    async def set_bytes_to_play(self, in_bytes):
+        self.packet_buffer.put(bytes([0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0xd5]) + in_bytes)
 
     def is_opus(self):
         return False
@@ -32,17 +27,23 @@ class Encoder(AudioSource):
     def read(self):
         values = bytes()
         for i in range(48 * 20):
+            if not self.packet_buffer.empty() and not self.bytes_available:
+                self.byte_source = self.packet_buffer.get(block=False)
+                self.byte_index = 0
+                self.bit_index = 0
+                self.bytes_available = True
+
             # run out of bytes
             if self.byte_index >= len(self.byte_source):
-                if not self.emitted_event.is_set():
+                if self.bytes_available:
                     self.ifg_samples = samples_per_ifg
-                self.emitted_event.set()
+                self.bytes_available = False
 
             sample = 0
 
-            if self.ifg_samples:
+            if self.ifg_samples > 0:
                 self.ifg_samples -= 1
-            elif not self.emitted_event.is_set():
+            elif self.bytes_available:
                 sample = 3000
                 if self.byte_source[self.byte_index] & (1 << self.bit_index):
                     sample *= -1
@@ -115,7 +116,6 @@ class Decoder(AudioSink):
             elif self.current_byte == 0xd5:
                 self.preamble_done = True
 
-
             if self.preamble_done:
                 self.current_byte = 0
         else:
@@ -136,7 +136,7 @@ class Decoder(AudioSink):
         for sample in samples[::2]:
             self.samples_last_symbol += 1
 
-            if self.preamble_done and self.samples_last_symbol > samples_per_half_symbol * 4:
+            if self.preamble_done and self.samples_last_symbol > samples_per_ifg:
                 self.handle_data(bytes(self.current_packet))
                 self.reset()
 
