@@ -21,7 +21,7 @@ class Encoder(AudioSource):
         pass
 
     def set_bytes_to_play(self, in_bytes):
-        self.byte_source = bytes([0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xab]) + in_bytes
+        self.byte_source = bytes([0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0xd5]) + in_bytes
         self.byte_index = 0
         self.bit_index = 0
         self.emitted_event.clear()
@@ -82,6 +82,7 @@ class Decoder(AudioSink):
         self.preamble_done = False
         self.last_preamble_bit = 0
         self.was_preamble_inverted = False
+        self.preamble_ignore_bits = 2
 
     def reset(self):
         self.high = False
@@ -96,19 +97,25 @@ class Decoder(AudioSink):
         self.preamble_done = False
         self.last_preamble_bit = 0
         self.was_preamble_inverted = False
+        self.preamble_ignore_bits = 2
 
     def push_bit(self, bit):
         if not self.preamble_done:
-            # detect end of preamble bit pattern
-            self.current_byte |= bit << 7
+            if self.preamble_ignore_bits:
+                self.preamble_ignore_bits -= 1
+                return
 
-            if self.current_byte == 0xab:
-                self.preamble_done = True
-            elif self.current_byte == 0x54:
+            # detect end of preamble bit pattern
+            self.current_byte >>= 1
+            self.current_byte |= bit << 7
+            print(hex(self.current_byte))
+
+            if self.current_byte == 0x2a:
                 self.preamble_done = True
                 self.was_preamble_inverted = True
+            elif self.current_byte == 0xd5:
+                self.preamble_done = True
 
-            self.current_byte >>= 1
 
             if self.preamble_done:
                 self.current_byte = 0
