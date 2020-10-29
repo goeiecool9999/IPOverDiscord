@@ -32,7 +32,7 @@ class Encoder(AudioSource):
     def read(self):
         values = bytes()
         for i in range(48 * 20):
-            #run out of bytes
+            # run out of bytes
             if self.byte_index >= len(self.byte_source):
                 if not self.emitted_event.is_set():
                     self.ifg_samples = samples_per_ifg
@@ -58,7 +58,6 @@ class Encoder(AudioSource):
                         self.byte_index += 1
                         self.bit_index = 0
 
-
             sample = struct.pack('<h', sample)
             values += sample
             values += sample
@@ -69,16 +68,47 @@ class Encoder(AudioSource):
 class Decoder(AudioSink):
 
     def __init__(self, data_fun):
+        self.handle_data = data_fun
+
         self.high = False
         self.previous_high = False
-        self.handle_data = data_fun
+
         self.current_packet = bytearray()
         self.current_byte = 0
         self.current_bit = 0
         self.samples_last_symbol = 0
         self.finding_sym = False
 
+        self.preamble_done = False
+        self.last_preamble_bit = 0
+        self.was_preamble_inverted = False
+
+    def reset(self):
+        self.high = False
+        self.previous_high = False
+
+        self.current_packet = bytearray()
+        self.current_byte = 0
+        self.current_bit = 0
+        self.samples_last_symbol = 0
+        self.finding_sym = False
+
+        self.preamble_done = False
+        self.last_preamble_bit = 0
+        self.was_preamble_inverted = False
+
     def push_bit(self, bit):
+        if not self.preamble_done:
+            if self.last_preamble_bit == bit:
+                print ("FOUND PREAMBLE!!!!!!!!!!!!!")
+                self.preamble_done = True
+                self.was_preamble_inverted = not bit
+            self.last_preamble_bit = bit
+            return
+
+        if self.was_preamble_inverted:
+            bit = not bit
+
         self.current_byte |= bit << self.current_bit
         self.current_bit += 1
         if self.current_bit > 7:
@@ -95,11 +125,15 @@ class Decoder(AudioSink):
         for sample in samples[::2]:
             self.samples_last_symbol += 1
 
+            if self.preamble_done and self.samples_last_symbol > samples_per_half_symbol * 8:
+                self.handle_data(bytes(self.current_packet))
+                self.reset()
+
             if abs(sample) < 100:
                 continue
             if self.samples_last_symbol < 10:
                 continue
-            if self.samples_last_symbol < samples_per_half_symbol*2*.75:
+            if self.samples_last_symbol < samples_per_half_symbol * 2 * .75:
                 continue
 
             self.high = sample > 0
