@@ -4,9 +4,9 @@ from asyncio import Event
 from discord import AudioSource, AudioSink
 from math import sin, pi
 
-samples_per_half_symbol = 200
+samples_per_half_symbol = 11
 
-samples_per_ifg = 50
+samples_per_ifg = 20
 
 
 class Encoder(AudioSource):
@@ -108,7 +108,6 @@ class Decoder(AudioSink):
             # detect end of preamble bit pattern
             self.current_byte >>= 1
             self.current_byte |= bit << 7
-            print(hex(self.current_byte))
 
             if self.current_byte == 0x2a:
                 self.preamble_done = True
@@ -137,7 +136,7 @@ class Decoder(AudioSink):
         for sample in samples[::2]:
             self.samples_last_symbol += 1
 
-            if self.preamble_done and self.samples_last_symbol > samples_per_half_symbol * 8:
+            if self.preamble_done and self.samples_last_symbol > samples_per_half_symbol * 4:
                 self.handle_data(bytes(self.current_packet))
                 self.reset()
 
