@@ -54,7 +54,7 @@ class MyCog(commands.Cog):
         self.printer.cancel()
 
     def handle_packet(self,packet):
-        print(packet.decode('ascii'))
+        print(packet)
         tun.write(packet)
 
     async def printer(self):

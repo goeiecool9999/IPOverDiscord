@@ -99,24 +99,29 @@ class Decoder(AudioSink):
 
     def push_bit(self, bit):
         if not self.preamble_done:
-            if self.last_preamble_bit == bit:
-                print ("FOUND PREAMBLE!!!!!!!!!!!!!")
+            # detect end of preamble bit pattern
+            self.current_byte |= bit << 7
+
+            if self.current_byte == 0xab:
                 self.preamble_done = True
-                self.was_preamble_inverted = not bit
-            self.last_preamble_bit = bit
-            return
+            elif self.current_byte == 0x54:
+                self.preamble_done = True
+                self.was_preamble_inverted = True
 
-        if self.was_preamble_inverted:
-            bit = not bit
+            self.current_byte >>= 1
 
-        self.current_byte |= bit << self.current_bit
-        self.current_bit += 1
-        if self.current_bit > 7:
-            print(chr(self.current_byte), end='')
-            self.current_bit = 0
-            self.current_byte = 0
-            self.current_packet.append(self.current_byte)
-        pass
+            if self.preamble_done:
+                self.current_byte = 0
+        else:
+            if self.was_preamble_inverted:
+                bit = not bit
+
+            self.current_byte |= bit << self.current_bit
+            self.current_bit += 1
+            if self.current_bit > 7:
+                self.current_packet.append(self.current_byte)
+                self.current_bit = 0
+                self.current_byte = 0
 
     def write(self, data):
         unpacked = struct.iter_unpack('<h', data.data)
