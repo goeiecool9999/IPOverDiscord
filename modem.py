@@ -1,4 +1,5 @@
 import struct
+from asyncio import Event
 
 from discord import AudioSource, AudioSink
 from math import sin, pi
@@ -12,12 +13,15 @@ class Encoder(AudioSource):
         self.byte_index = 0
         self.bit_index = 0
         self.bit_samples = 0
+        self.emitted_event = Event()
+        self.emitted_event.set()
         pass
 
     def set_bytes_to_play(self, bytes):
         self.byte_source = bytes
         self.byte_index = 0
         self.bit_index = 0
+        self.emitted_event.clear()
 
     def is_opus(self):
         return False
@@ -25,6 +29,9 @@ class Encoder(AudioSource):
     def read(self):
         values = bytes()
         for i in range(48 * 20):
+            if self.byte_index >= len(self.byte_source):
+                self.emitted_event.set()
+                break
             sample = 3000
             if self.byte_source[self.byte_index] & (1 << self.bit_index):
                 sample *= -1
@@ -39,15 +46,15 @@ class Encoder(AudioSource):
                 if self.bit_index >= 8:
                     self.byte_index += 1
                     self.bit_index = 0
-            if self.byte_index >= len(self.byte_source):
-                break
 
             sample = struct.pack('<h', sample)
             values += sample
             values += sample
 
-        if len(values) < 48 * 20 * 2 * 2:
-            values += [0 for i in range(48 * 20 * 2 * 2 - len(values))]
+        for i in range(48 * 20 * 2 - len(values)//2):
+            sample = struct.pack('<h', 0)
+            values += sample
+            values += sample
 
         return values
 
@@ -58,33 +65,45 @@ class Decoder(AudioSink):
         self.high = False
         self.previous_high = False
         self.handle_data = data_fun
-        self.current_packet = bytes()
+        self.current_packet = bytearray()
         self.current_byte = 0
+        self.current_bit = 0
         self.samples_last_symbol = 0
+        self.finding_sym = False
 
     def push_bit(self, bit):
+        self.current_byte |= bit << self.current_bit
+        self.current_bit += 1
+        if self.current_bit > 7:
+            print(chr(self.current_byte), end='')
+            self.current_bit = 0
+            self.current_byte = 0
+            self.current_packet.append(self.current_byte)
         pass
 
     def write(self, data):
         unpacked = struct.iter_unpack('<h', data.data)
         samples = [sample[0] for sample in unpacked]
 
-        for sample in samples:
+        for sample in samples[::2]:
             self.samples_last_symbol += 1
 
             if abs(sample) < 100:
                 continue
+            if self.samples_last_symbol < 10:
+                continue
+            if self.samples_last_symbol < samples_per_half_symbol*2*.75:
+                continue
 
             self.high = sample > 0
 
-            if self.previous_high != self.high:
-                if self.samples_last_symbol < 10:
-                    continue
-                if self.samples_last_symbol < samples_per_half_symbol * 2 * .75:
-                    continue
-
-                print(1 if self.high else 0, end='')
-
-                self.samples_last_symbol = 0
-
+            if not self.finding_sym:
                 self.previous_high = self.high
+                self.finding_sym = True
+
+            if self.high != self.previous_high:
+                self.push_bit(1 if self.high else 0)
+                self.samples_last_symbol = 0
+                self.finding_sym = False
+
+            self.previous_high = self.high

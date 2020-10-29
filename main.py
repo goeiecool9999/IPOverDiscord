@@ -1,3 +1,4 @@
+import asyncio
 import signal
 from asyncio import Event
 from concurrent.futures.thread import ThreadPoolExecutor
@@ -37,16 +38,15 @@ discord.opus.is_loaded()
 
 TOKEN = os.environ["DISCORD_TOKEN"]
 
-bot = discord.ext.commands.Bot('!')
+bot = discord.ext.commands.Bot('!', mem_cache_flags=discord.MemberCacheFlags.all())
 
 
 class MyCog(commands.Cog):
     def __init__(self, bot):
         self.chan = None
         self.bot = bot
+        self.other_bot = None
         self.encoder = Encoder()
-        self.encoder_available_event = Event()
-        self.encoder_available_event.set()
         self.decoder = Decoder(lambda packet: self.handle_packet(packet))
         self.vcclient = None
 
@@ -61,11 +61,10 @@ class MyCog(commands.Cog):
         print("sending has started")
         while True:
             packet = await bot.loop.run_in_executor(threadpool, (lambda: tun.read(tun.mtu + 16)))
-            packet = "this is a test".encode('ascii')
-            await self.encoder_available_event.wait()
-            self.encoder_available_event.clear()
+            packet = "\x00\x00\x00\x00\x00\x00\x00this is a test".encode('ascii')
+            # packet = bytes([85,85,85,85,85,85,85,85,85,85,85,85,85,85,0,0,0,0,0,0,0,0,0,0])
+            await self.encoder.emitted_event.wait()
             self.encoder.set_bytes_to_play(packet)
-            self.vcclient.play(self.encoder, after=lambda x: self.encoder_available_event.set())
 
     @commands.Cog.listener()
     async def on_ready(self):
@@ -81,7 +80,17 @@ class MyCog(commands.Cog):
         if not self.vcclient:
             bot.remove_cog('MyCog')
 
+        while not self.other_bot:
+            print("looking for peer")
+            self.other_bot = discord.utils.find(lambda m: m.id != self.bot.user.id and m.bot, self.chan.members)
+            await asyncio.sleep(1)
+
+        await self.vcclient.disconnect()
+        self.vcclient = await self.chan.connect()
+
         self.vcclient.listen(self.decoder)
+        # self.vcclient.listen(discord.UserFilter(discord.WaveSink('test.wav'), user=self.other_bot))
+        self.vcclient.play(self.encoder)
         self.bot.loop.create_task(self.printer())
 
 
