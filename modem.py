@@ -102,6 +102,8 @@ class Decoder(AudioSink):
         self.was_preamble_inverted = False
         self.preamble_ignore_bits = 2
 
+        print("----------------")
+
     def push_bit(self, bit):
         if not self.preamble_done:
             if self.preamble_ignore_bits:
@@ -119,6 +121,7 @@ class Decoder(AudioSink):
                 self.preamble_done = True
 
             if self.preamble_done:
+                print("****************")
                 self.current_byte = 0
         else:
             if self.was_preamble_inverted:
@@ -141,6 +144,7 @@ class Decoder(AudioSink):
             if self.preamble_done and self.samples_last_symbol > samples_per_half_symbol*8:
                 self.handle_data(bytes(self.current_packet))
                 self.reset()
+                continue
 
             if abs(sample) < 300:
                 continue
@@ -156,12 +160,12 @@ class Decoder(AudioSink):
                 self.finding_sym = True
 
             if self.high != self.previous_high:
-                self.push_bit(1 if self.high else 0)
-
-                if self.samples_last_symbol >= samples_per_half_symbol*2*2:
+                if self.preamble_done and self.samples_last_symbol >= samples_per_half_symbol*2*2:
                     self.handle_data(bytes(self.current_packet))
                     self.reset()
+                    continue
 
+                self.push_bit(1 if self.high else 0)
                 self.samples_last_symbol = 0
                 self.finding_sym = False
 
