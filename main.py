@@ -38,8 +38,6 @@ bot = discord.ext.commands.Bot('!')
 class MyCog(commands.Cog):
     def __init__(self, bot):
         self.chan = None
-        self.ownMessage = None
-        self.recvMessage = None
         self.bot = bot
         self.send_buffer = Buffer(tun.mtu)
         self.send_buffer.flush_action((lambda buffer: self.transmit_bulk_packets(buffer)))
@@ -51,7 +49,7 @@ class MyCog(commands.Cog):
         for i, packet in enumerate(buffer.packets):
             emb.add_field(name=str(i), value=packet)
 
-        await self.ownMessage.edit(embed=emb)
+        await self.chan.send(embed=emb, delete_after=1)
         await buffer.signal_free()
 
     def cog_unload(self):
@@ -77,17 +75,13 @@ class MyCog(commands.Cog):
             await self.send_buffer.queue_packet(converted)
 
     @commands.Cog.listener()
-    async def on_raw_message_edit(self, payload):
-        if payload.message_id != self.recvMessage.id:
-            return
-        message = payload.data
-
-        if not "author" in message:
+    async def on_message(self, message):
+        if not message.author.bot:
             return
 
-        fields = message['embeds'][0]['fields']
+        fields = message.embeds[0].fields
         for field in fields:
-            decoded_bytes = field['value']
+            decoded_bytes = field.value
             decoded_bytes = bytes([ord(i) - int('0x2800', 16) for i in decoded_bytes])
             tun.write(decoded_bytes)
 
@@ -100,13 +94,6 @@ class MyCog(commands.Cog):
         print("channel is: {}".format(self.chan))
         if not self.chan:
             bot.remove_cog('MyCog')
-        self.ownMessage = discord.utils.get(await self.chan.history(limit=20).flatten(), author=bot.user)
-        if not self.ownMessage:
-            self.ownMessage = await self.chan.send("x")
-        print("waiting for other message")
-        while not self.recvMessage:
-            self.recvMessage = discord.utils.find(lambda m: m.author != bot.user, await self.chan.history(limit=20).flatten())
-        print("found other message with content: ", self.recvMessage.content)
 
         self.autoflusher.start()
         self.bot.loop.create_task(self.printer())
