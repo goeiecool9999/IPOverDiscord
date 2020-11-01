@@ -1,6 +1,7 @@
 import queue
 import struct
 from concurrent.futures.thread import ThreadPoolExecutor
+import time
 from itertools import zip_longest
 
 from discord import AudioSource, AudioSink
@@ -48,7 +49,7 @@ class Encoder():
             if self.ifg_samples > 0:
                 self.ifg_samples -= 1
             elif self.bytes_available:
-                sample = 10000
+                sample = 16000
                 if self.byte_source[self.byte_index] & (1 << self.bit_index):
                     sample *= -1
 
@@ -78,6 +79,8 @@ class StereoEncoder(AudioSource):
         return False
 
     def set_bytes_to_play(self, in_bytes):
+        if len(in_bytes) % 2 != 0:
+            in_bytes = in_bytes + b"\x00"
         self.left_enc.set_bytes_to_play(in_bytes[::2])
         self.right_enc.set_bytes_to_play(in_bytes[1::2])
 
@@ -93,7 +96,7 @@ class StereoEncoder(AudioSource):
 
 class Decoder:
 
-    def __init__(self, data_fun):
+    def __init__(self, data_fun, stereodec):
         self.handle_data = data_fun
 
         self.high = False
@@ -109,6 +112,8 @@ class Decoder:
         self.last_preamble_bit = 0
         self.was_preamble_inverted = False
         self.preamble_ignore_bits = 2
+
+        self.stereodec = stereodec
 
     def reset(self):
         self.high = False
@@ -144,6 +149,8 @@ class Decoder:
                 self.preamble_done = True
 
             if self.preamble_done:
+                self.stereodec.left_has_data = False
+                self.stereodec.right_has_data = False
                 print("****************")
                 self.current_byte = 0
         else:
@@ -167,7 +174,7 @@ class Decoder:
                 self.reset()
                 continue
 
-            if abs(sample) < 300:
+            if abs(sample) < 500:
                 continue
             if self.samples_last_symbol < 10:
                 continue
@@ -196,8 +203,8 @@ class Decoder:
 class StereoDecoder(AudioSink):
 
     def __init__(self, data_fun):
-        self.left_dec = Decoder(lambda data: self.left_data(data))
-        self.right_dec = Decoder(lambda data: self.right_data(data))
+        self.left_dec = Decoder(lambda data: self.left_data(data), self)
+        self.right_dec = Decoder(lambda data: self.right_data(data), self)
         self.left_has_data = False
         self.right_has_data = False
         self.left_bytes = None
@@ -206,6 +213,13 @@ class StereoDecoder(AudioSink):
         pass
 
     def submit_data(self):
+        print ("submitting at: ", int(time.time()))
+        print (self.left_bytes)
+        print (self.right_bytes)
+        delta = abs(len(self.left_bytes) - len(self.right_bytes))
+        if delta >= 1:
+            print ("################################################")
+            print (delta)
         interleave = zip_longest(self.left_bytes, self.right_bytes, fillvalue=0)
         interleave = [num for elem in interleave for num in elem]
         self.data_fun(bytes(interleave))
@@ -213,12 +227,14 @@ class StereoDecoder(AudioSink):
         self.right_has_data = False
 
     def left_data(self, data):
+        print ("left received data at: ", int(time.time()))
         self.left_bytes = data
         self.left_has_data = True
         if self.right_has_data:
             self.submit_data()
 
     def right_data(self, data):
+        print ("right received data at: ", int(time.time()))
         self.right_bytes = data
         self.right_has_data = True
         if self.left_has_data:
