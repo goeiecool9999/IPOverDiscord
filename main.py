@@ -17,7 +17,7 @@ tun = TunTapDevice(name='discip')
 tun.addr = os.environ['SRC_IP']
 tun.dstaddr = os.environ['DST_IP']
 tun.netmask = '255.255.255.0'
-tun.mtu = 1990
+tun.mtu = 1020
 tun.persist(True)
 tun.up()
 
@@ -47,11 +47,11 @@ class MyCog(commands.Cog):
     async def transmit_bulk_packets(self, buffer):
         if not len(buffer.packets):
             return
-        message = ''
-        for packet in buffer.packets:
-            message += packet + " "
-        message = message[:-1]
-        await self.ownMessage.edit(content=message)
+        emb = discord.Embed()
+        for i, packet in enumerate(buffer.packets):
+            emb.add_field(name=str(i), value=packet)
+
+        await self.ownMessage.edit(embed=emb)
         await buffer.signal_free()
 
     def cog_unload(self):
@@ -80,12 +80,13 @@ class MyCog(commands.Cog):
         if payload.message_id != self.recvMessage.id:
             return
         message = payload.data
-        if message['author'] == self.bot.user:
+
+        if not "author" in message:
             return
-        packets = message['content'].split()
-        print("received {} packets.".format(len(packets)))
-        for packet in packets:
-            decoded_bytes = packet
+
+        fields = message['embeds'][0]['fields']
+        for field in fields:
+            decoded_bytes = field['value']
             decoded_bytes = bytes([ord(i) - int('0x2800', 16) for i in decoded_bytes])
             tun.write(decoded_bytes)
 
