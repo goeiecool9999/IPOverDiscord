@@ -1,13 +1,18 @@
 import queue
 import struct
+from concurrent.futures.thread import ThreadPoolExecutor
+from itertools import zip_longest
+
 from discord import AudioSource, AudioSink
 
-samples_per_half_symbol = 15
+
+threadpool = ThreadPoolExecutor(8)
+samples_per_half_symbol = 50
 
 samples_per_ifg = samples_per_half_symbol*16
 
 
-class Encoder(AudioSource):
+class Encoder():
     def __init__(self):
         self.packet_buffer = queue.Queue(maxsize=1)
         self.byte_source = bytes()
@@ -21,11 +26,8 @@ class Encoder(AudioSource):
     def set_bytes_to_play(self, in_bytes):
         self.packet_buffer.put(bytes([0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0xd5]) + in_bytes)
 
-    def is_opus(self):
-        return False
-
     def read(self):
-        values = bytes()
+        values = []
         for i in range(48 * 20):
             if not self.packet_buffer.empty() and not self.bytes_available:
                 self.byte_source = self.packet_buffer.get(block=False)
@@ -46,7 +48,7 @@ class Encoder(AudioSource):
             if self.ifg_samples > 0:
                 self.ifg_samples -= 1
             elif self.bytes_available:
-                sample = 3000
+                sample = 10000
                 if self.byte_source[self.byte_index] & (1 << self.bit_index):
                     sample *= -1
 
@@ -61,14 +63,35 @@ class Encoder(AudioSource):
                         self.byte_index += 1
                         self.bit_index = 0
 
-            sample = struct.pack('<h', sample)
-            values += sample
-            values += sample
+            values.append(sample)
 
         return values
 
+class StereoEncoder(AudioSource):
+    def __init__(self):
+        self.left_enc = Encoder()
+        self.right_enc = Encoder()
+        pass
 
-class Decoder(AudioSink):
+
+    def is_opus(self):
+        return False
+
+    def set_bytes_to_play(self, in_bytes):
+        self.left_enc.set_bytes_to_play(in_bytes[::2])
+        self.right_enc.set_bytes_to_play(in_bytes[1::2])
+
+    def read(self):
+        left_chan = threadpool.submit(self.left_enc.read)
+        right_chan = threadpool.submit(self.right_enc.read)
+        interleave = zip(left_chan.result(), right_chan.result())
+        interleave = [struct.pack('<h',num) for elem in interleave for num in elem]
+
+        return bytes().join(interleave)
+
+
+
+class Decoder:
 
     def __init__(self, data_fun):
         self.handle_data = data_fun
@@ -134,11 +157,9 @@ class Decoder(AudioSink):
                 self.current_bit = 0
                 self.current_byte = 0
 
-    def write(self, data):
-        unpacked = struct.iter_unpack('<h', data.data)
-        samples = [sample[0] for sample in unpacked]
+    def write(self, samples):
 
-        for sample in samples[::2]:
+        for sample in samples:
             self.samples_last_symbol += 1
 
             if self.preamble_done and self.samples_last_symbol > samples_per_half_symbol*8:
@@ -170,3 +191,42 @@ class Decoder(AudioSink):
                 self.finding_sym = False
 
             self.previous_high = self.high
+
+
+class StereoDecoder(AudioSink):
+
+    def __init__(self, data_fun):
+        self.left_dec = Decoder(lambda data: self.left_data(data))
+        self.right_dec = Decoder(lambda data: self.right_data(data))
+        self.left_has_data = False
+        self.right_has_data = False
+        self.left_bytes = None
+        self.right_bytes = None
+        self.data_fun = data_fun
+        pass
+
+    def submit_data(self):
+        interleave = zip_longest(self.left_bytes, self.right_bytes, fillvalue=0)
+        interleave = [num for elem in interleave for num in elem]
+        self.data_fun(bytes(interleave))
+        self.left_has_data = False
+        self.right_has_data = False
+
+    def left_data(self, data):
+        self.left_bytes = data
+        self.left_has_data = True
+        if self.right_has_data:
+            self.submit_data()
+
+    def right_data(self, data):
+        self.right_bytes = data
+        self.right_has_data = True
+        if self.left_has_data:
+            self.submit_data()
+
+    def write(self, data):
+        unpacked = struct.iter_unpack('<h', data.data)
+        samples = [sample[0] for sample in unpacked]
+
+        self.left_dec.write(samples[::2])
+        self.right_dec.write(samples[1::2])

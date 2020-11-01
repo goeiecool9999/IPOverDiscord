@@ -1,6 +1,5 @@
 import asyncio
 import signal
-from asyncio import Event
 from concurrent.futures.thread import ThreadPoolExecutor
 
 from pytun import TunTapDevice
@@ -11,7 +10,7 @@ import os
 
 import logging
 
-from modem import Encoder, Decoder
+from modem import StereoDecoder, StereoEncoder
 
 logging.basicConfig(level=logging.INFO)
 
@@ -46,8 +45,8 @@ class MyCog(commands.Cog):
         self.chan = None
         self.bot = bot
         self.other_bot = None
-        self.encoder = Encoder()
-        self.decoder = Decoder(lambda packet: self.handle_packet(packet))
+        self.encoder = StereoEncoder()
+        self.decoder = StereoDecoder(lambda packet: self.handle_packet(packet))
         self.vcclient = None
 
     def cog_unload(self):
