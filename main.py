@@ -17,7 +17,7 @@ tun = TunTapDevice(name='discip')
 tun.addr = os.environ['SRC_IP']
 tun.dstaddr = os.environ['DST_IP']
 tun.netmask = '255.255.255.0'
-tun.mtu = 1020
+tun.mtu = 1000-4
 tun.persist(True)
 tun.up()
 
@@ -61,6 +61,7 @@ class MyCog(commands.Cog):
     @tasks.loop(seconds=1)
     async def autoflusher(self):
         if self.send_buffer.totalSize:
+            print(self.send_buffer.totalSize)
             print("autoflushing")
         else:
             print("not flushing, ", self.send_buffer.totalSize)

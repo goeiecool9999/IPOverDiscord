@@ -20,10 +20,9 @@ class Buffer:
         self.totalSize = 0
 
     async def queue_packet(self, string):
-        while len(string) + self.totalSize > 6000 - len(self.packets)*2:
+        while len(string) + self.totalSize > 6000 - len(self.packets)*3:
             self.free_event.clear()
             await self.free_event.wait()
 
         self.packets.append(string)
         self.totalSize += len(string)
-        print(self.totalSize)
