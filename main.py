@@ -78,6 +78,8 @@ class MyCog(commands.Cog):
     async def on_message(self, message):
         if not message.author.bot:
             return
+        if message.author == self.bot.user:
+            return
 
         fields = message.embeds[0].fields
         for field in fields:
