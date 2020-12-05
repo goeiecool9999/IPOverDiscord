@@ -3,7 +3,7 @@ A python program that creates a network interface over discord.
 
 Dependencies: python-pytun and discord.py
 
-This experimental branch, which is an easer-egg of sorts requires https://github.com/Gorialis/discord.py/tree/voice-recv-mk3a
+This experimental branch, which is an easer-egg of sorts requires https://github.com/Gorialis/discord.py/tree/voice-recv-mk3
 
 install with:``` pip install -U "discord.py[voice] @ git+https://github.com/Gorialis/discord.py@voice-recv-mk3"```
 
