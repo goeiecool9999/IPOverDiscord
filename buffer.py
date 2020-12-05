@@ -1,28 +1,25 @@
-from asyncio import Event
+from threading import Event, Lock
 
 class Buffer:
-    def __init__(self, mtu):
+    def __init__(self):
         self.transmit = None
-        self.mtu = mtu
+        self.buffer_lock = Lock()
         self.packets = []
         self.totalSize = 0
         self.free_event = Event()
 
-    async def signal_free(self):
+    def signal_free(self):
         self.free_event.set()
 
-    def flush_action(self, transmit_fun):
-        self.transmit = transmit_fun
-
-    async def flush_packets(self):
-        await self.transmit(self)
+    def clear(self):
         self.packets.clear()
         self.totalSize = 0
 
-    async def queue_packet(self, string):
-        while len(string) + self.totalSize > 6000 - len(self.packets)*3:
-            self.free_event.clear()
-            await self.free_event.wait()
+    def queue_packet(self, string):
+        with self.buffer_lock:
+            while len(string)*2 + self.totalSize > 8*1024*1024 - len(self.packets):
+                self.free_event.clear()
+                self.free_event.wait()
 
-        self.packets.append(string)
-        self.totalSize += len(string)
+            self.packets.append(string)
+            self.totalSize += len(string)*2
