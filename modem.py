@@ -6,11 +6,12 @@ from itertools import zip_longest
 
 from discord import AudioSource, AudioSink
 
+import soundcard as sc
 
 threadpool = ThreadPoolExecutor(8)
-samples_per_half_symbol = 50
+samples_per_half_symbol = 10
 
-samples_per_ifg = samples_per_half_symbol*16
+samples_per_ifg = samples_per_half_symbol*2*16
 
 
 class Encoder():
@@ -25,12 +26,12 @@ class Encoder():
         pass
 
     def set_bytes_to_play(self, in_bytes):
-        self.packet_buffer.put(bytes([0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0xd5]) + in_bytes)
+        self.packet_buffer.put(bytes([0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0xd5]) + in_bytes + bytes([0,0,0,0,0,0,0,0,0,0]))
 
     def read(self):
         values = []
         for i in range(48 * 20):
-            if not self.packet_buffer.empty() and not self.bytes_available:
+            if not self.packet_buffer.empty() and not self.bytes_available and self.ifg_samples == 0:
                 self.byte_source = self.packet_buffer.get(block=False)
                 print("??????????????????")
                 self.byte_index = 0
@@ -49,7 +50,7 @@ class Encoder():
             if self.ifg_samples > 0:
                 self.ifg_samples -= 1
             elif self.bytes_available:
-                sample = 16000
+                sample = 32767
                 if self.byte_source[self.byte_index] & (1 << self.bit_index):
                     sample *= -1
 
@@ -169,14 +170,14 @@ class Decoder:
         for sample in samples:
             self.samples_last_symbol += 1
 
-            if self.preamble_done and self.samples_last_symbol > samples_per_half_symbol*8:
+
+
+            if self.preamble_done and self.samples_last_symbol > samples_per_ifg//2:
                 self.handle_data(bytes(self.current_packet))
                 self.reset()
                 continue
 
-            if abs(sample) < 500:
-                continue
-            if self.samples_last_symbol < 10:
+            if abs(sample) < 6000:
                 continue
             if self.samples_last_symbol < samples_per_half_symbol * 2 * .75:
                 continue
@@ -188,7 +189,7 @@ class Decoder:
                 self.finding_sym = True
 
             if self.high != self.previous_high:
-                if self.preamble_done and self.samples_last_symbol >= samples_per_half_symbol*2*2:
+                if self.preamble_done and self.samples_last_symbol > samples_per_ifg//2:
                     self.handle_data(bytes(self.current_packet))
                     self.reset()
                     continue
@@ -200,6 +201,7 @@ class Decoder:
             self.previous_high = self.high
 
 
+import numpy as np
 class StereoDecoder(AudioSink):
 
     def __init__(self, data_fun):
@@ -210,19 +212,26 @@ class StereoDecoder(AudioSink):
         self.left_bytes = None
         self.right_bytes = None
         self.data_fun = data_fun
+        self.stream = sc.default_speaker().player(samplerate=48000,channels=2,blocksize=960*4)
+        self.stream.__enter__();
         pass
 
     def submit_data(self):
         print ("submitting at: ", int(time.time()))
-        print (self.left_bytes)
-        print (self.right_bytes)
+        print("left data:")
+        print (''.join('{:02x}'.format(x) for x in self.left_bytes))
+        print("right data:")
+        print (''.join('{:02x}'.format(x) for x in self.right_bytes))
         delta = abs(len(self.left_bytes) - len(self.right_bytes))
         if delta >= 1:
             print ("################################################")
             print (delta)
         interleave = zip_longest(self.left_bytes, self.right_bytes, fillvalue=0)
         interleave = [num for elem in interleave for num in elem]
-        self.data_fun(bytes(interleave))
+        interleavedbytes = bytes(interleave)
+        print("complete data:")
+        print (''.join('{:02x}'.format(x) for x in interleavedbytes))
+        self.data_fun(interleavedbytes)
         self.left_has_data = False
         self.right_has_data = False
 
@@ -243,6 +252,9 @@ class StereoDecoder(AudioSink):
     def write(self, data):
         unpacked = struct.iter_unpack('<h', data.data)
         samples = [sample[0] for sample in unpacked]
+        streams = np.reshape(np.int16(samples) / 32767, newshape=(len(samples)//2,2))
+
+        self.stream.play(streams)
 
         self.left_dec.write(samples[::2])
         self.right_dec.write(samples[1::2])
