@@ -1,5 +1,6 @@
 import asyncio
 import signal
+import threading
 from concurrent.futures.thread import ThreadPoolExecutor
 
 from pytun import TunTapDevice
@@ -29,7 +30,7 @@ def terminate():
 
 signal.signal(signal.SIGINT, terminate)
 
-threadpool = ThreadPoolExecutor(2)
+threadpool = ThreadPoolExecutor(4)
 
 import ctypes.util
 discord.opus.load_opus(ctypes.util.find_library('opus'))
@@ -49,18 +50,22 @@ class MyCog(commands.Cog):
         self.decoder = StereoDecoder(lambda packet: self.handle_packet(packet))
         self.vcclient = None
 
+        self.run_send_thread = True
+        self.send_thread = threading.Thread(target=self.send_loop)
+
     def cog_unload(self):
-        self.printer.cancel()
+        self.run_send_thread = False
+        self.send_thread.join()
+        self.vcclient.disconnect()
 
     def handle_packet(self,packet):
         if len(packet) >= 4:
             tun.write(packet)
 
-    async def printer(self):
-        print("sending has started")
-        while True:
-            packet = await bot.loop.run_in_executor(threadpool, (lambda: tun.read(tun.mtu + 16)))
-            await bot.loop.run_in_executor(threadpool, (lambda: self.encoder.set_bytes_to_play(packet)))
+    def send_loop(self):
+        while self.run_send_thread:
+            packet = tun.read(tun.mtu + 16)
+            self.encoder.set_bytes_to_play(packet)
 
     @commands.Cog.listener()
     async def on_ready(self):
@@ -87,7 +92,8 @@ class MyCog(commands.Cog):
         self.vcclient.listen(discord.UserFilter(self.decoder, user=self.other_bot))
         # self.vcclient.listen(discord.UserFilter(discord.WaveSink('test.wav'), user=self.other_bot))
         self.vcclient.play(self.encoder)
-        self.bot.loop.create_task(self.printer())
+
+        self.send_thread.start()
 
 
 bot.add_cog(MyCog(bot))

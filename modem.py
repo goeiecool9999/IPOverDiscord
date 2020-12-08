@@ -9,9 +9,9 @@ from discord import AudioSource, AudioSink
 import soundcard as sc
 
 threadpool = ThreadPoolExecutor(8)
-samples_per_half_symbol = 10
+samples_per_half_symbol = 12
 
-samples_per_ifg = samples_per_half_symbol*2*16
+samples_per_ifg = samples_per_half_symbol*2*32
 
 
 class Encoder():
@@ -26,7 +26,7 @@ class Encoder():
         pass
 
     def set_bytes_to_play(self, in_bytes):
-        self.packet_buffer.put(bytes([0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0xd5]) + in_bytes + bytes([0,0,0,0,0,0,0,0,0,0]))
+        self.packet_buffer.put(bytes([0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0xd5]) + in_bytes + bytes([0,0,0,0,0,0]))
 
     def read(self):
         values = []
@@ -100,7 +100,6 @@ class Decoder:
     def __init__(self, data_fun, stereodec):
         self.handle_data = data_fun
 
-        self.high = False
         self.previous_high = False
 
         self.current_packet = bytearray()
@@ -112,33 +111,24 @@ class Decoder:
         self.preamble_done = False
         self.last_preamble_bit = 0
         self.was_preamble_inverted = False
-        self.preamble_ignore_bits = 2
 
         self.stereodec = stereodec
 
     def reset(self):
-        self.high = False
         self.previous_high = False
 
         self.current_packet = bytearray()
         self.current_byte = 0
         self.current_bit = 0
         self.samples_last_symbol = 0
-        self.finding_sym = False
 
         self.preamble_done = False
         self.last_preamble_bit = 0
         self.was_preamble_inverted = False
-        self.preamble_ignore_bits = 2
-
         print("----------------")
 
     def push_bit(self, bit):
         if not self.preamble_done:
-            if self.preamble_ignore_bits:
-                self.preamble_ignore_bits -= 1
-                return
-
             # detect end of preamble bit pattern
             self.current_byte >>= 1
             self.current_byte |= bit << 7
@@ -148,6 +138,8 @@ class Decoder:
                 self.was_preamble_inverted = True
             elif self.current_byte == 0xd5:
                 self.preamble_done = True
+
+            # print('{:08b}'.format(self.current_byte))
 
             if self.preamble_done:
                 self.stereodec.left_has_data = False
@@ -170,8 +162,7 @@ class Decoder:
         for sample in samples:
             self.samples_last_symbol += 1
 
-
-
+            #handle IFG
             if self.preamble_done and self.samples_last_symbol > samples_per_ifg//2:
                 self.handle_data(bytes(self.current_packet))
                 self.reset()
@@ -179,26 +170,13 @@ class Decoder:
 
             if abs(sample) < 6000:
                 continue
-            if self.samples_last_symbol < samples_per_half_symbol * 2 * .75:
-                continue
 
-            self.high = sample > 0
-
-            if not self.finding_sym:
-                self.previous_high = self.high
-                self.finding_sym = True
-
-            if self.high != self.previous_high:
-                if self.preamble_done and self.samples_last_symbol > samples_per_ifg//2:
-                    self.handle_data(bytes(self.current_packet))
-                    self.reset()
-                    continue
-
-                self.push_bit(1 if self.high else 0)
+            high = sample > 0
+            if high != self.previous_high and self.samples_last_symbol >= samples_per_half_symbol*2*.8:
+                self.push_bit(1 if high else 0)
                 self.samples_last_symbol = 0
-                self.finding_sym = False
+            self.previous_high = high
 
-            self.previous_high = self.high
 
 
 import numpy as np
@@ -212,16 +190,18 @@ class StereoDecoder(AudioSink):
         self.left_bytes = None
         self.right_bytes = None
         self.data_fun = data_fun
-        self.stream = sc.default_speaker().player(samplerate=48000,channels=2,blocksize=960*4)
-        self.stream.__enter__();
+        # self.stream = sc.default_speaker().player(samplerate=48000,channels=2,blocksize=960*4)
+        # self.stream.__enter__();
         pass
 
     def submit_data(self):
         print ("submitting at: ", int(time.time()))
-        print("left data:")
-        print (''.join('{:02x}'.format(x) for x in self.left_bytes))
-        print("right data:")
-        print (''.join('{:02x}'.format(x) for x in self.right_bytes))
+
+        # print("left data:")
+        # print (''.join('{:02x}'.format(x) for x in self.left_bytes))
+        # print("right data:")
+        # print (''.join('{:02x}'.format(x) for x in self.right_bytes))
+
         delta = abs(len(self.left_bytes) - len(self.right_bytes))
         if delta >= 1:
             print ("################################################")
@@ -229,8 +209,10 @@ class StereoDecoder(AudioSink):
         interleave = zip_longest(self.left_bytes, self.right_bytes, fillvalue=0)
         interleave = [num for elem in interleave for num in elem]
         interleavedbytes = bytes(interleave)
-        print("complete data:")
-        print (''.join('{:02x}'.format(x) for x in interleavedbytes))
+
+        # print("complete data:")
+        # print (''.join('{:02x}'.format(x) for x in interleavedbytes))
+
         self.data_fun(interleavedbytes)
         self.left_has_data = False
         self.right_has_data = False
@@ -252,9 +234,9 @@ class StereoDecoder(AudioSink):
     def write(self, data):
         unpacked = struct.iter_unpack('<h', data.data)
         samples = [sample[0] for sample in unpacked]
-        streams = np.reshape(np.int16(samples) / 32767, newshape=(len(samples)//2,2))
+        # streams = np.reshape(np.int16(samples) / 32767, newshape=(len(samples)//2,2))
 
-        self.stream.play(streams)
+        # self.stream.play(streams)
 
         self.left_dec.write(samples[::2])
         self.right_dec.write(samples[1::2])
