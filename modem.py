@@ -6,10 +6,10 @@ from itertools import zip_longest
 
 from discord import AudioSource, AudioSink
 
-import soundcard as sc
+# import soundcard as sc
 
 threadpool = ThreadPoolExecutor(8)
-samples_per_half_symbol = 12
+samples_per_half_symbol = 15
 
 samples_per_ifg = samples_per_half_symbol*2*32
 
@@ -94,7 +94,7 @@ class StereoEncoder(AudioSource):
         return bytes().join(interleave)
 
 
-
+# import matplotlib.pyplot as plt
 class Decoder:
 
     def __init__(self, data_fun, stereodec):
@@ -158,6 +158,15 @@ class Decoder:
                 self.current_byte = 0
 
     def write(self, samples):
+        # plotted = False
+        # processed = [0]
+        # for i in samples:
+        #     if abs(i) >= 20000:
+        #         processed.append(i)
+        #     else:
+        #         processed.append(processed[-1])
+        #
+        # processed.pop(0)
 
         for sample in samples:
             self.samples_last_symbol += 1
@@ -168,12 +177,18 @@ class Decoder:
                 self.reset()
                 continue
 
-            if abs(sample) < 6000:
+            if abs(sample) < 15000:
                 continue
 
             high = sample > 0
-            if high != self.previous_high and self.samples_last_symbol >= samples_per_half_symbol*2*.8:
+            if high != self.previous_high and self.samples_last_symbol >= samples_per_half_symbol*1.75:
                 self.push_bit(1 if high else 0)
+                # if not plotted:
+                #     asdf, zoom = plt.subplots(2, figsize=(26,8))
+                #     zoom[0].plot(samples)
+                #     zoom[1].plot(processed)
+                #     plt.show()
+                #     plotted = True
                 self.samples_last_symbol = 0
             self.previous_high = high
 
