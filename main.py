@@ -11,7 +11,7 @@ import os
 
 import logging
 
-from modem import StereoDecoder, StereoEncoder
+from modem import StereoDecoder, StereoEncoder, Decoder, Encoder
 
 logging.basicConfig(level=logging.INFO)
 
@@ -93,7 +93,19 @@ class MyCog(commands.Cog):
         # self.vcclient.listen(discord.UserFilter(discord.WaveSink('test.wav'), user=self.other_bot))
         self.vcclient.play(self.encoder)
 
+        self.encoder.set_bytes_to_play(bytes([0]))
         self.send_thread.start()
+        # self.fuck = threading.Thread(target=self.yolo())
+        # self.fuck.start()
+
+
+# asdf = StereoDecoder(lambda data: None)
+# encoder = Encoder()
+# decoder = Decoder(lambda packet: None, stereodec=asdf)
+# encoder.set_bytes_to_play(b"Dit is een test")
+#
+# while True:
+#     decoder.write(encoder.read())
 
 
 bot.add_cog(MyCog(bot))
