@@ -11,7 +11,7 @@ from discord import AudioSource, AudioSink
 threadpool = ThreadPoolExecutor(8)
 samples_per_half_symbol = 15
 
-samples_per_ifg = samples_per_half_symbol*2*32
+samples_per_ifg = samples_per_half_symbol * 2 * 32
 
 
 class Encoder():
@@ -26,7 +26,7 @@ class Encoder():
         pass
 
     def set_bytes_to_play(self, in_bytes):
-        self.packet_buffer.put(bytes([0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0xd5]) + in_bytes + bytes([0,0,0,0,0,0]))
+        self.packet_buffer.put(bytes([0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0xd5]) + in_bytes + bytes([0, 0, 0, 0, 0, 0]))
 
     def read(self):
         values = []
@@ -69,12 +69,12 @@ class Encoder():
 
         return values
 
+
 class StereoEncoder(AudioSource):
     def __init__(self):
         self.left_enc = Encoder()
         self.right_enc = Encoder()
         pass
-
 
     def is_opus(self):
         return False
@@ -89,12 +89,11 @@ class StereoEncoder(AudioSource):
         left_chan = threadpool.submit(self.left_enc.read)
         right_chan = threadpool.submit(self.right_enc.read)
         interleave = zip(left_chan.result(), right_chan.result())
-        interleave = [struct.pack('<h',num) for elem in interleave for num in elem]
+        interleave = [struct.pack('<h', num) for elem in interleave for num in elem]
 
         return bytes().join(interleave)
 
 
-# import matplotlib.pyplot as plt
 class Decoder:
 
     def __init__(self, data_fun, stereodec):
@@ -158,43 +157,28 @@ class Decoder:
                 self.current_byte = 0
 
     def write(self, samples):
-        # plotted = False
-        # processed = [0]
-        # for i in samples:
-        #     if abs(i) >= 20000:
-        #         processed.append(i)
-        #     else:
-        #         processed.append(processed[-1])
-        #
-        # processed.pop(0)
-
         for sample in samples:
             self.samples_last_symbol += 1
 
-            #handle IFG
-            if self.preamble_done and self.samples_last_symbol > samples_per_ifg//2:
+            # handle IFG
+            if self.preamble_done and self.samples_last_symbol > samples_per_ifg // 2:
                 self.handle_data(bytes(self.current_packet))
                 self.reset()
                 continue
 
-            if abs(sample) < 15000:
+            if abs(sample) < 12000:
                 continue
 
             high = sample > 0
-            if high != self.previous_high and self.samples_last_symbol >= samples_per_half_symbol*1.75:
+            if high != self.previous_high and self.samples_last_symbol >= samples_per_half_symbol * 1.75:
                 self.push_bit(1 if high else 0)
-                # if not plotted:
-                #     asdf, zoom = plt.subplots(2, figsize=(26,8))
-                #     zoom[0].plot(samples)
-                #     zoom[1].plot(processed)
-                #     plt.show()
-                #     plotted = True
                 self.samples_last_symbol = 0
             self.previous_high = high
 
 
-
 import numpy as np
+
+
 class StereoDecoder(AudioSink):
 
     def __init__(self, data_fun):
@@ -210,7 +194,7 @@ class StereoDecoder(AudioSink):
         pass
 
     def submit_data(self):
-        print ("submitting at: ", int(time.time()))
+        print("submitting at: ", int(time.time()))
 
         # print("left data:")
         # print (''.join('{:02x}'.format(x) for x in self.left_bytes))
@@ -219,8 +203,8 @@ class StereoDecoder(AudioSink):
 
         delta = abs(len(self.left_bytes) - len(self.right_bytes))
         if delta >= 1:
-            print ("################################################")
-            print (delta)
+            print("################################################")
+            print(delta)
         interleave = zip_longest(self.left_bytes, self.right_bytes, fillvalue=0)
         interleave = [num for elem in interleave for num in elem]
         interleavedbytes = bytes(interleave)
@@ -233,14 +217,14 @@ class StereoDecoder(AudioSink):
         self.right_has_data = False
 
     def left_data(self, data):
-        print ("left received data at: ", int(time.time()))
+        print("left received data at: ", int(time.time()))
         self.left_bytes = data
         self.left_has_data = True
         if self.right_has_data:
             self.submit_data()
 
     def right_data(self, data):
-        print ("right received data at: ", int(time.time()))
+        print("right received data at: ", int(time.time()))
         self.right_bytes = data
         self.right_has_data = True
         if self.left_has_data:
