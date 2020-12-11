@@ -31,6 +31,8 @@ enc_table = [
     0b11101,
 ]
 
+end_of_packet = 0b00111
+
 dec_map = {}
 for i in range(16):
     dec_map[enc_table[i]] = i
@@ -49,7 +51,7 @@ class Encoder():
         pass
 
     def set_bytes_to_play(self, in_bytes):
-        self.packet_buffer.put(in_bytes + bytes([0, 0, 0, 0, 0, 0]))
+        self.packet_buffer.put(in_bytes)
 
     def read(self):
         values = []
@@ -57,7 +59,7 @@ class Encoder():
             if not self.packet_buffer.empty() and not self.bytes_available and self.ifg_samples == 0:
                 # encode packet using 4b5b
                 self.byte_source = [0x1f] * 6 + [0x17] + [enc_table[nib] for i in self.packet_buffer.get(block=False)
-                                                          for nib in [i & 0xf, i >> 4]]
+                                                          for nib in [i & 0xf, i >> 4]] + [end_of_packet]*6
                 print("??????????????????")
                 self.byte_index = 0
                 self.bit_index = 0
@@ -123,21 +125,8 @@ class Decoder:
 
     def __init__(self, data_fun, stereodec):
         self.handle_data = data_fun
-
-        self.previous_high = False
-
-        self.current_packet = bytearray()
-        self.current_byte = 0
-        self.current_code = 0
-        self.high_nibble = False
-        self.current_bit = 0
-        self.samples_last_symbol = 0
-
-        self.preamble_done = False
-        self.plotted = False
-        self.drop = False
-
         self.stereodec = stereodec
+        self.reset()
 
     def reset(self):
         self.previous_high = False
@@ -152,6 +141,7 @@ class Decoder:
         self.preamble_done = False
         self.plotted = False
         self.drop = False
+        self.packet_ended = False
         print("----------------")
 
     def push_bit(self, bit):
@@ -184,7 +174,12 @@ class Decoder:
                         self.current_packet.append(self.current_byte)
                         self.current_byte = 0
                 except KeyError:
-                    self.drop = True
+                    if self.current_code == end_of_packet:
+                        if not self.packet_ended:
+                            self.handle_data(self.current_packet)
+                        self.packet_ended = True
+                    else:
+                        self.drop = True
 
                 self.high_nibble = not self.high_nibble
 
@@ -197,19 +192,19 @@ class Decoder:
             self.samples_last_symbol += 1
 
             # handle IFG
-            if self.preamble_done and self.samples_last_symbol > samples_per_ifg // 2:
-                if not self.drop:
-                    self.handle_data(self.current_packet)
-                else:
+            if (self.preamble_done and self.samples_last_symbol > samples_per_ifg // 2):
+                if self.drop:
                     print("PACKET LOSS!$$$$$$$$$$$$$$$$$$$$$$PACKET LOSS!")
+                elif not self.packet_ended:
+                    print("PACKET NOT ENDED!$$$$$$$$$$$$$$$$$$$$$$PACKET NOT ENDED!")
                 self.reset()
                 continue
 
-            if abs(sample) < 11000:
+            if abs(sample) < 18000:
                 continue
 
             high = sample > 0
-            if high != self.previous_high:
+            if high != self.previous_high and not self.packet_ended:
                 symbols_passed = int(round(self.samples_last_symbol / (samples_per_half_symbol * 2)))
                 if symbols_passed >= 1:
 
