@@ -33,6 +33,7 @@ signal.signal(signal.SIGINT, terminate)
 threadpool = ThreadPoolExecutor(4)
 
 import ctypes.util
+
 discord.opus.load_opus(ctypes.util.find_library('opus'))
 discord.opus.is_loaded()
 
@@ -58,7 +59,7 @@ class MyCog(commands.Cog):
         self.send_thread.join()
         self.vcclient.disconnect()
 
-    def handle_packet(self,packet):
+    def handle_packet(self, packet):
         if len(packet) >= 4:
             tun.write(packet)
 
@@ -89,24 +90,22 @@ class MyCog(commands.Cog):
         await self.vcclient.disconnect()
         self.vcclient = await self.chan.connect()
 
-        self.vcclient.listen(discord.UserFilter(self.decoder, user=self.other_bot))
         # self.vcclient.listen(discord.UserFilter(discord.WaveSink('test.wav'), user=self.other_bot))
+        self.vcclient.listen(discord.UserFilter(self.decoder, user=self.other_bot))
         self.vcclient.play(self.encoder)
 
-        self.encoder.set_bytes_to_play(bytes([0]))
         self.send_thread.start()
-        # self.fuck = threading.Thread(target=self.yolo())
-        # self.fuck.start()
+        # self.encoder.set_bytes_to_play(bytes([0]))
 
 
-# asdf = StereoDecoder(lambda data: None)
-# encoder = Encoder()
-# decoder = Decoder(lambda packet: None, stereodec=asdf)
-# encoder.set_bytes_to_play(b"Dit is een test")
+# sterenc = StereoEncoder()
+# decoder = StereoDecoder(lambda packet: tun.write(packet))
+# sterenc.set_bytes_to_play(b"0000Dit is een test")
+# from collections import namedtuple
+# data = namedtuple('data', 'data')
 #
 # while True:
-#     decoder.write(encoder.read())
-
+#     decoder.write(data(data=sterenc.read()))
 
 bot.add_cog(MyCog(bot))
 bot.run(TOKEN)
